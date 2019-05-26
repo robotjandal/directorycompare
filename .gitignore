@@ -50,4 +50,7 @@ target/
 
 # Project specifics
 *.log
-sources/
+data/
+.vscode/
+.project
+
