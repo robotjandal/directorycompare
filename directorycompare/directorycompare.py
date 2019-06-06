@@ -45,7 +45,7 @@ class ArgCommandParse(object):
         """
         self.command = "source"
         parser = argparse.ArgumentParser(
-            description="Add a new source directory"
+            description="Adds a new source directory."
         )
         parser.add_argument(
             "name", metavar="name", type=str, nargs=1, help="Name for source"
@@ -72,7 +72,19 @@ class ArgCommandParse(object):
         )
 
     def compare(self):
-        print("Not Implemented")
+        self.command = "compare"
+        parser = argparse.ArgumentParser(
+            description="Name sources already analysed."
+        )
+        parser.add_argument(
+            "source", metavar="name", type=str, nargs=2, help="Source name"
+        )
+        args = parser.parse_args(sys.argv[2:])
+        sources = []
+        for source in args.source:
+            sources.append(source)
+
+        self.options = {"command": "compare", "sources": sources}
 
 
 class AnalyseDirectory:
@@ -87,7 +99,7 @@ class AnalyseDirectory:
         self.name = commandline["name"]
         self.paths = commandline["paths"]
         self.file_data = {}
-        self.output_folder = Path(utils.SOURCE_DIRECTORY) / self.name
+        self.output_folder = Path(utils.DATA_FOLDER) / self.name
         if self.output_folder.is_dir():
             utils.remove_recursive(self.output_folder)
         print(f"Adding new source: {self.name}")
@@ -210,46 +222,134 @@ class AnalyseDirectory:
 
 class CompareSources:
     """
-        The primary source is compared against each secondary source.
-        Comparison is based on available
-
-        primary is the first source listed
-        secondary_sources are a list of all other sources
+        Compares two source names taken from the command line and save a
+        list of difference to file.
     """
 
     def __init__(self, commandline):
-        self.primary = commandline["primary"]
-        self.secondary_sources = commandline["scondary"]
+        self.sources = commandline["sources"]
         self.file_data = {}
-        # self.output_folder = Path(utils.SOURCE_DIRECTORY) / self.name
-        # if self.output_folder.is_dir():
-        #     utils.remove_recursive(self.output_folder)
-        # print(f"Adding new source: {self.name}")
-        # logging.info("Adding new source: %s", self.name)
+        self.source1 = {}
+        self.source2 = {}
+        self.differences = []
+        self.output_folder = Path(utils.DATA_FOLDER) / "comparisons"
+        # output file named from both sources separated by underscore
+        self.output_file = f"{self.sources[0]}_{self.sources[1]}"
+        logging.info(
+            "Comparing sources: %s %s", self.sources[0], self.sources[1]
+        )
+
+    def compare(self):
+        """
+            Main operation which loads files for each source then
+            compares and saves differences between sources to a file
+        """
+        source1 = self.load_source(self.sources[0])
+        source2 = self.load_source(self.sources[1])
+        comparison = FindDifferences(source1, source2)
+        self.differences = comparison.manual_check()
+        self.save_data()
+
+    def load_source(self, source):
+        """
+            Load files from a single source into a dictionary.
+
+            Key: filename without suffix
+            value: file data as a dictionary
+        """
+        try:
+            logging.debug("Sourcing: %s", source)
+            path = Path.cwd() / utils.DATA_FOLDER / source
+            files = os.listdir(path)
+            dictionary = {}
+            for item in files:
+                new_path = Path(path / item)
+                file_data = utils.read_csv(new_path)
+                dictionary.update({new_path.stem: file_data})
+                logging.debug("Found type: %s", new_path.stem)
+            return dictionary
+        except OSError as error:
+            print(error)
+
+    def save_data(self):
+        """
+            Save differences found to a file
+        """
+
+        logging.info("Saving files to %s", self.output_folder)
+        utils.create_folders(self.output_folder)
+        # output_path = self.output_folder /
+        fieldnames = ["name", "path", "size"]
+        path = self.output_folder / (self.output_file + ".csv")
+        utils.write_csv(self.differences, path, fieldnames)
+        print(f"Saved to {path}")
 
 
-def missing_files_lists(list1, list2):
+class FindDifferences:
     """
-        Returns missing dictionary elements from two lists.
+        Find differences between two lists
 
-        output_list is a list of dictionary items
-        list1 is assumed to be smaller in size.
+        TODO: expand to have different methods of checking for
+        difference
     """
-    difference = []
-    # TODO: instead of reverse try to access from [-1]
-    list1.reverse()
-    while list1:
-        item = list1.pop()
-        if item in list2:
-            print("exists")
-            list2.remove(item)
-        else:
-            print("not there")
-            difference.append(item)
 
-    difference.extend(list2)
-    return difference
+    def __init__(self, source1, source2):
+        self.A = source1
+        self.B = source2
+        self.differences = []
 
+    def manual_check(self):
+        """
+            Returns list of records which are not present in both source.
 
-def missing_files_dictionary():
-    pass
+            First checking membership of items in A into the B
+            and then vice versa. Any items which aren't found in both are
+            added to a new list which is returned.
+        """
+        # Brute force simple membership check once for all items in list A
+        # a second time for all items in list B.
+        for key, value in self.A.items():
+            for record in self.A[key]:
+                found_record = next(
+                    (
+                        item
+                        for item in self.B[key]
+                        if item["name"] == record["name"]
+                    ),
+                    None,
+                )
+                if found_record is None:
+                    logging.debug("Found difference: ")  # + record)
+                    self.differences.append(record)
+                else:
+                    if found_record["size"] != record["size"]:
+                        logging.debug("Found difference: ")  # + found_record)
+                        self.differences.append(found_record)
+        for key, value in self.B.items():
+            for record in self.B[key]:
+                found_record = next(
+                    (
+                        item
+                        for item in self.A[key]
+                        if item["name"] == record["name"]
+                    ),
+                    None,
+                )
+                if found_record is None:
+                    logging.debug("Found difference: ")  # + record)
+                    self.differences.append(record)
+                else:
+                    if found_record["size"] != record["size"]:
+                        logging.debug("Found difference: ")  # + found_record)
+                        self.differences.append(found_record)
+
+        logging.debug("Finished comparing files")
+        logging.debug("Found %s files", len(self.differences))
+        return self.differences
+
+    def hash_check(self):
+        """
+            Use a hashing function to test whether or not a dictionary item
+            matches.
+        """
+        pass

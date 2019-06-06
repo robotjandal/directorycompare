@@ -8,18 +8,21 @@
 
 import logging
 
-from directorycompare.utils import preprocessing
-from directorycompare.directorycompare import ArgCommandParse, AnalyseDirectory
+from directorycompare.directorycompare import (
+    ArgCommandParse,
+    AnalyseDirectory,
+    CompareSources,
+)
 
 logging.basicConfig(filename=("logs/app.log"), level=logging.DEBUG)
 
 
 def run():
-    preprocessing()
     args = ArgCommandParse()
     if args.command == "source":
         action = AnalyseDirectory(args.options)
         action.analyse()
     if args.command == "compare":
-        print(f"Not implemented")
-    print(f"Success")
+        action = CompareSources(args.options)
+        action.compare()
+    print(f"Success!")
