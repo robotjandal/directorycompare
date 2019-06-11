@@ -22,7 +22,7 @@ def run():
     if args.command == "source":
         action = AnalyseDirectory(args.options)
         action.analyse()
-    if args.command == "compare":
+    elif args.command == "compare":
         action = CompareSources(args.options)
         action.compare()
     print(f"Success!")

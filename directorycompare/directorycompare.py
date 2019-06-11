@@ -7,6 +7,7 @@ from directorycompare import utils
 
 IMAGE_FORMATS = {".jpg", ".jpeg", ".png"}
 RAW_FORMATS = {".arw"}
+VERSION = "0.01"
 
 
 class ArgCommandParse(object):
@@ -104,6 +105,8 @@ class AnalyseDirectory:
             utils.remove_recursive(self.output_folder)
         print(f"Adding new source: {self.name}")
         logging.info("Adding new source: %s", self.name)
+        # Records number of folders, images etc found
+        self.processed = {}
 
     def analyse(self):
         """
@@ -114,6 +117,7 @@ class AnalyseDirectory:
         self.retrieve_stats(files)
         self.sort_data()
         self.save_data_to_file()
+        self.save_index_data()
 
     def gather_files(self):
         """
@@ -121,15 +125,25 @@ class AnalyseDirectory:
             files.
         """
         print(f"Searching folders")
-        folder_list = self.paths
+        folder_list = self.paths.copy()
         images = []
         raws = []
+        folders_found = 0
         while folder_list:
             contents, folders = self.process_folder(folder_list.pop())
             folder_list.extend(folders)
             images.extend(contents["images"])
             raws.extend(contents["raws"])
+            folders_found += 1
 
+        self.processed = {
+            "folders": folders_found,
+            "files": {
+                "total": len(images) + len(raws),
+                "images": len(images),
+                "raws": len(raws),
+            },
+        }
         files = {"images": images, "raws": raws}
         logging.debug("Total images found: %.0f", len(images))
         logging.debug("Total raws found: %.0f", len(raws))
@@ -219,6 +233,18 @@ class AnalyseDirectory:
             utils.write_csv(self.file_data[key], path, fieldnames)
         print(f"Saved under {self.output_folder}")
 
+    def save_index_data(self):
+        """
+            Save index information about the source to a single file.
+        """
+        filename = f"{self.name}.index"
+        # convert paths to str
+        paths = [str(x) for x in self.paths]
+        yaml_output = {"paths": paths, "name": self.name, "version": VERSION}
+        yaml_output.update(self.processed)
+        path = Path(self.output_folder) / filename
+        utils.write_yaml(path, yaml_output)
+
 
 class CompareSources:
     """
@@ -244,11 +270,34 @@ class CompareSources:
             Main operation which loads files for each source then
             compares and saves differences between sources to a file
         """
+        # Check versions before allowing compare to occur
+        self.version_test()
         source1 = self.load_source(self.sources[0])
         source2 = self.load_source(self.sources[1])
         comparison = FindDifferences(source1, source2)
         self.differences = comparison.manual_check()
         self.save_data()
+
+    def version_test(self):
+        """
+            Ensure the versions between sources match
+        """
+        index1 = self.load_index(self.sources[0])
+        index2 = self.load_index(self.sources[1])
+        assert index1["version"] == VERSION
+        assert index2["version"] == VERSION
+        assert index1["version"] == index2["version"]
+
+    def load_index(self, source):
+        """
+            Loads the index file for a corresponding source.
+        """
+        try:
+            path = Path.cwd() / utils.DATA_FOLDER / source / f"{source}.index"
+            file_data = utils.read_yaml(path)
+            return file_data
+        except OSError as error:
+            print(error)
 
     def load_source(self, source):
         """
@@ -262,6 +311,8 @@ class CompareSources:
             path = Path.cwd() / utils.DATA_FOLDER / source
             files = os.listdir(path)
             dictionary = {}
+            # only load csv files
+            files = [x for x in files if Path(x).suffix == ".csv"]
             for item in files:
                 new_path = Path(path / item)
                 file_data = utils.read_csv(new_path)
@@ -275,7 +326,6 @@ class CompareSources:
         """
             Save differences found to a file
         """
-
         logging.info("Saving files to %s", self.output_folder)
         utils.create_folders(self.output_folder)
         # output_path = self.output_folder /

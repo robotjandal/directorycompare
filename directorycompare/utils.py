@@ -2,6 +2,7 @@ import os
 import logging
 from pathlib import Path
 import csv
+import yaml
 
 # Globals
 DATA_FOLDER = "data"
@@ -99,3 +100,34 @@ def write_csv(data, filepath, fieldnames):
         writer.writeheader()
         for row in data:
             writer.writerow(row)
+
+
+def read_yaml(path):
+    """
+        Reads from yaml file only if the yaml file exists.
+
+        If no file exists nothing happens
+    """
+    if not path.is_file():
+        logging.debug("File not found %s. No action taken", path)
+        return
+    try:
+        with path.open('r') as f:
+            data = yaml.safe_load(f)
+        return data
+    except IOError as e_info:
+        print(e_info)
+    except yaml.YAMLError as e_info:
+        print("Failed to import file")
+        print(e_info)
+
+
+def write_yaml(path, data):
+    """
+        Write dictionary object to yaml file.
+    """
+    try:
+        with path.open('w+') as f:
+            yaml.dump(data, f, default_flow_style=False)
+    except IOError as e_info:
+        print(e_info)
